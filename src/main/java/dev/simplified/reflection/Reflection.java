@@ -66,7 +66,7 @@ public class Reflection<R> {
      * @param classPath The fully-qualified class path to reflect.
      */
     @SuppressWarnings("unchecked")
-    private Reflection(@NotNull String classPath) {
+    public Reflection(@NotNull String classPath) {
         if (CLASS_CACHE.containsKey(classPath))
             this.type = (Class<R>) CLASS_CACHE.get(classPath);
         else {
@@ -718,10 +718,8 @@ public class Reflection<R> {
             .getFields()
             .stream()
             .filter(fieldAccessor -> fieldAccessor.hasAnnotation(BuildFlag.class))
-            .map(fieldAccessor -> Pair.of(fieldAccessor, fieldAccessor.getAnnotation(BuildFlag.class).orElseThrow()))
-            .forEach(fieldPair -> {
-                FieldAccessor<?> field = fieldPair.getLeft();
-                BuildFlag flag = fieldPair.getRight();
+            .expandToPair(fieldAccessor -> Pair.of(fieldAccessor, fieldAccessor.getAnnotation(BuildFlag.class).orElseThrow()))
+            .forEach((field, flag) -> {
                 boolean invalid = false;
                 Object value = field.get(builder);
 
