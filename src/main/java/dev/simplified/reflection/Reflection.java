@@ -37,7 +37,6 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -47,7 +46,7 @@ import java.util.stream.Collectors;
 @Getter
 public class Reflection<R> {
 
-    private static final Map<String, Class<?>> CLASS_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Class<?>> CLASS_CACHE = Concurrent.newMap();
     private final @NotNull Class<R> type;
     @Setter private boolean processingSuperclass = true;
 
