@@ -213,4 +213,8 @@ public interface Accessor<T extends AccessibleObject> {
         return Modifier.isStrict(this.getModifiers());
     }
 
+    default void setAccessible(boolean accessible) {
+        this.getHandle().setAccessible(accessible);
+    }
+
 }
