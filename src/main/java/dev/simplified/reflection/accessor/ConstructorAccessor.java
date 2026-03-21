@@ -95,7 +95,7 @@ public final class ConstructorAccessor<T> implements Accessor<Constructor<T>> {
                 .map(Objects::toString)
                 .forEach(arguments::add);
 
-            throw new ReflectionException(exception, "Unable to create new instance of '%s' with arguments [%s].", this.getType(), arguments);
+            throw new ReflectionException(exception, "Unable to create new instance of '%s' with arguments [%s]", this.getType(), arguments);
         }
     }
 
