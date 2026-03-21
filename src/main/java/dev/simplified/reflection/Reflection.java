@@ -26,6 +26,7 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InaccessibleObjectException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -92,7 +93,13 @@ public class Reflection<R> {
     private static Field[] getDeclaredFieldsCached(@NotNull Class<?> type) {
         return DECLARED_FIELDS_CACHE.computeIfAbsent(type, cls -> {
             Field[] fields = cls.getDeclaredFields();
-            for (Field f : fields) f.setAccessible(true);
+
+            for (Field f : fields) {
+                try {
+                    f.setAccessible(true);
+                } catch (InaccessibleObjectException ignored) { }
+            }
+
             return fields;
         });
     }
@@ -107,7 +114,13 @@ public class Reflection<R> {
     private static Method[] getDeclaredMethodsCached(@NotNull Class<?> type) {
         return DECLARED_METHODS_CACHE.computeIfAbsent(type, cls -> {
             Method[] methods = cls.getDeclaredMethods();
-            for (Method m : methods) m.setAccessible(true);
+
+            for (Method m : methods) {
+                try {
+                    m.setAccessible(true);
+                } catch (InaccessibleObjectException ignored) { }
+            }
+
             return methods;
         });
     }
@@ -122,7 +135,13 @@ public class Reflection<R> {
     private static Constructor<?>[] getDeclaredConstructorsCached(@NotNull Class<?> type) {
         return DECLARED_CONSTRUCTORS_CACHE.computeIfAbsent(type, cls -> {
             Constructor<?>[] constructors = cls.getDeclaredConstructors();
-            for (Constructor<?> c : constructors) c.setAccessible(true);
+
+            for (Constructor<?> c : constructors) {
+                try {
+                    c.setAccessible(true);
+                } catch (InaccessibleObjectException ignored) { }
+            }
+
             return constructors;
         });
     }
@@ -157,7 +176,7 @@ public class Reflection<R> {
                 this.type = (Class<R>) Class.forName(classPath);
                 CLASS_CACHE.put(classPath, this.type);
             } catch (Exception cnfex) {
-                throw new ReflectionException(cnfex, "Unable to locate class '%s'.", classPath);
+                throw new ReflectionException(cnfex, "Unable to locate class '%s'", classPath);
             }
         }
     }
@@ -192,7 +211,7 @@ public class Reflection<R> {
                 return new ConstructorAccessor<>(this, (Constructor<R>) constructor);
         }
 
-        throw new ReflectionException("The constructor matching '%s' was not found in '%s'!", Arrays.asList(types), this.getType().getName());
+        throw new ReflectionException("The constructor matching '%s' was not found in '%s'", Arrays.asList(types), this.getType().getName());
     }
 
     /**
@@ -216,7 +235,7 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getField(type);
 
-        throw new ReflectionException("The field with type '%s' was not found in '%s'!", type, this.getType().getName());
+        throw new ReflectionException("The field with type '%s' was not found in '%s'", type, this.getType().getName());
     }
 
     /**
@@ -249,7 +268,7 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getField(name);
 
-        throw new ReflectionException("The field '%s' was not found in '%s'!", name, this.getType().getName());
+        throw new ReflectionException("The field '%s' was not found in '%s'", name, this.getType().getName());
     }
 
     /**
@@ -337,7 +356,7 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getMethod(type, paramTypes);
 
-        throw new ReflectionException("The method with return type '%s' was not found in '%s' with parameters '%s'!", type, this.getType().getName(), Arrays.asList(types));
+        throw new ReflectionException("The method with return type '%s' was not found in '%s' with parameters '%s'", type, this.getType().getName(), Arrays.asList(types));
     }
 
     /**
@@ -378,7 +397,7 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getMethod(name, paramTypes);
 
-        throw new ReflectionException("The method '%s' was not found in '%s' with parameters '%s'.", name, this.getType().getName(), Arrays.asList(types));
+        throw new ReflectionException("The method '%s' was not found in '%s' with parameters '%s'", name, this.getType().getName(), Arrays.asList(types));
     }
 
     /**
@@ -557,7 +576,7 @@ public class Reflection<R> {
                 }
             }
 
-            throw new ReflectionException("Unable to locate generic class in '%s' at index %s!", key.getKey().getSimpleName(), key.getValue());
+            throw new ReflectionException("Unable to locate generic class in '%s' at index %s", key.getKey().getSimpleName(), key.getValue());
         });
 
         return (Class<U>) cached;
@@ -739,7 +758,7 @@ public class Reflection<R> {
         } catch (ReflectionException reflectionException) {
             throw reflectionException;
         } catch (Exception ex) {
-            throw new ReflectionException(ex, "Unable to create new instance of '%s' with arguments '%s'.", this.getType().getName(), Arrays.asList(args));
+            throw new ReflectionException(ex, "Unable to create new instance of '%s' with arguments '%s'", this.getType().getName(), Arrays.asList(args));
         }
     }
 
@@ -906,7 +925,7 @@ public class Reflection<R> {
                         invalid = ((Collection<?>) value).size() > flag.limit();
 
                     if (invalid)
-                        throw new ReflectionException("Field '%s' in '%s' does not match pattern '%s' (value: '%s')!", field.getField().getName(), builder.getClass().getSimpleName(), flag.pattern(), value);
+                        throw new ReflectionException("Field '%s' in '%s' does not match pattern '%s' (value: '%s')", field.getField().getName(), builder.getClass().getSimpleName(), flag.pattern(), value);
                 }
             }
 
@@ -938,7 +957,7 @@ public class Reflection<R> {
                     }
 
                     if (invalid)
-                        throw new ReflectionException("Field '%s' in '%s' has length %s, exceeds limit of %s!", field.getField().getName(), builder.getClass().getSimpleName(), actualLength, flag.limit());
+                        throw new ReflectionException("Field '%s' in '%s' has length %s, exceeds limit of %s", field.getField().getName(), builder.getClass().getSimpleName(), actualLength, flag.limit());
                 }
             }
         });
@@ -949,7 +968,7 @@ public class Reflection<R> {
             .filterValue(Boolean::booleanValue)
             .findFirst()
             .ifPresentOrElse(pair -> {
-                throw new ReflectionException("Field '%s' in '%s' is required and is null/empty!", pair.getKey().getField().getName(), builder.getClass().getSimpleName());
+                throw new ReflectionException("Field '%s' in '%s' is required and is null/empty", pair.getKey().getField().getName(), builder.getClass().getSimpleName());
             }, () -> invalidRequired.stream()
                 .filterKey(key -> !key.equals("_DEFAULT_"))
                 .filter((key, fields) -> fields.stream().allMatch((field, invalid) -> invalid))
