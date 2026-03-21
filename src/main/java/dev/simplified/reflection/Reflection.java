@@ -41,24 +41,55 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Allows for cached access to hidden fields, methods and classes.
+ * A cached reflection wrapper providing access to fields, methods, constructors, and
+ * generic type parameters of a given class.
+ *
+ * <p>
+ * All reflective lookups are backed by per-class caches that eliminate repeated JNI calls
+ * to {@code getDeclaredFields()}, {@code getDeclaredMethods()}, and
+ * {@code getDeclaredConstructors()}. Each cached member is made accessible once on first
+ * load. Higher-level results - such as the full field set across an inheritance hierarchy,
+ * {@link BuildFlag @BuildFlag} metadata per builder class, and resolved generic superclass
+ * types - are also cached.
+ *
+ * <p>
+ * By default, lookups walk the superclass chain ({@link #isProcessingSuperclass()} is
+ * {@code true}). Set it to {@code false} to restrict lookups to the declared class only.
+ *
+ * @param <R> the reflected class type
  */
 @Getter
 public class Reflection<R> {
 
+    /** Cache of fully-qualified class path to resolved {@link Class} object. */
     private static final ConcurrentMap<String, Class<?>> CLASS_CACHE = Concurrent.newMap();
+    /** Cache of declared fields per class, made accessible on first load. */
     private static final ConcurrentMap<Class<?>, Field[]> DECLARED_FIELDS_CACHE = Concurrent.newMap();
+    /** Cache of declared methods per class, made accessible on first load. */
     private static final ConcurrentMap<Class<?>, Method[]> DECLARED_METHODS_CACHE = Concurrent.newMap();
+    /** Cache of declared constructors per class, made accessible on first load. */
     private static final ConcurrentMap<Class<?>, Constructor<?>[]> DECLARED_CONSTRUCTORS_CACHE = Concurrent.newMap();
+    /** Cache of flattened field accessors across the full superclass chain, per class. */
     private static final ConcurrentMap<Class<?>, ConcurrentSet<FieldAccessor<?>>> ALL_FIELDS_CACHE = Concurrent.newMap();
+    /** Cache of flattened method accessors across the full superclass chain, per class. */
     private static final ConcurrentMap<Class<?>, ConcurrentSet<MethodAccessor<?>>> ALL_METHODS_CACHE = Concurrent.newMap();
+    /** Cache of {@link BuildFlag @BuildFlag} field metadata per builder class. */
     private static final ConcurrentMap<Class<?>, ConcurrentList<BuildFlagEntry>> BUILD_FLAG_CACHE = Concurrent.newMap();
+    /** Cache of resolved generic superclass types, keyed by (class, type argument index). */
     private static final ConcurrentMap<Pair<Class<?>, Integer>, Class<?>> SUPER_CLASS_CACHE = Concurrent.newMap();
     private final @NotNull Class<R> type;
     @Setter private boolean processingSuperclass = true;
 
+    /** Pairs a {@link FieldAccessor} with its {@link BuildFlag} annotation for cached validation. */
     private record BuildFlagEntry(@NotNull FieldAccessor<?> fieldAccessor, @NotNull BuildFlag flag) { }
 
+    /**
+     * Returns the declared fields of the given class from cache, loading and making
+     * them accessible on first access.
+     *
+     * @param type the class to retrieve declared fields for
+     * @return the cached array of declared fields
+     */
     private static Field[] getDeclaredFieldsCached(@NotNull Class<?> type) {
         return DECLARED_FIELDS_CACHE.computeIfAbsent(type, cls -> {
             Field[] fields = cls.getDeclaredFields();
@@ -67,6 +98,13 @@ public class Reflection<R> {
         });
     }
 
+    /**
+     * Returns the declared methods of the given class from cache, loading and making
+     * them accessible on first access.
+     *
+     * @param type the class to retrieve declared methods for
+     * @return the cached array of declared methods
+     */
     private static Method[] getDeclaredMethodsCached(@NotNull Class<?> type) {
         return DECLARED_METHODS_CACHE.computeIfAbsent(type, cls -> {
             Method[] methods = cls.getDeclaredMethods();
@@ -75,6 +113,13 @@ public class Reflection<R> {
         });
     }
 
+    /**
+     * Returns the declared constructors of the given class from cache, loading and making
+     * them accessible on first access.
+     *
+     * @param type the class to retrieve declared constructors for
+     * @return the cached array of declared constructors
+     */
     private static Constructor<?>[] getDeclaredConstructorsCached(@NotNull Class<?> type) {
         return DECLARED_CONSTRUCTORS_CACHE.computeIfAbsent(type, cls -> {
             Constructor<?>[] constructors = cls.getDeclaredConstructors();
@@ -84,19 +129,25 @@ public class Reflection<R> {
     }
 
     /**
-     * Creates a new reflection instance of {@literal packageName}.{@literal className}.
+     * Creates a new reflection instance from a package name and simple class name.
+     * The class is resolved via {@link Class#forName(String)} and cached for subsequent
+     * lookups.
      *
-     * @param packageName The package the {@literal className} belongs to.
-     * @param simplifiedName The class name to reflect.
+     * @param packageName the package the class belongs to
+     * @param simplifiedName the simple class name to reflect
+     * @throws ReflectionException if the class cannot be located
      */
     public Reflection(@NotNull String packageName, @NotNull String simplifiedName) {
         this(String.format("%s.%s", packageName, simplifiedName));
     }
 
     /**
-     * Creates a new reflection instance of {@literal classPath}.
+     * Creates a new reflection instance from a fully-qualified class path. The class
+     * is resolved via {@link Class#forName(String)} and cached in {@code CLASS_CACHE}
+     * for subsequent lookups.
      *
-     * @param classPath The fully-qualified class path to reflect.
+     * @param classPath the fully-qualified class path to reflect
+     * @throws ReflectionException if the class cannot be located
      */
     @SuppressWarnings("unchecked")
     public Reflection(@NotNull String classPath) {
@@ -107,30 +158,29 @@ public class Reflection<R> {
                 this.type = (Class<R>) Class.forName(classPath);
                 CLASS_CACHE.put(classPath, this.type);
             } catch (Exception cnfex) {
-                throw new ReflectionException(cnfex);
+                throw new ReflectionException(cnfex, "Unable to locate class '%s'.", classPath);
             }
         }
     }
 
     /**
-     * Creates a new reflection instance of {@literal clazz}.
+     * Creates a new reflection instance from a class reference. Primitive types are
+     * automatically wrapped to their boxed equivalents via {@link PrimitiveUtil#wrap(Class)}.
      *
-     * @param type The class to reflect.
+     * @param type the class to reflect
      */
     public Reflection(@NotNull Class<R> type) {
         this.type = PrimitiveUtil.wrap(type);
     }
 
     /**
-     * Gets a constructor with the matching parameter types.
-     * <p>
-     * The parameter types are automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first constructor whose parameter types match the given types.
+     * Constructors are loaded from a per-class cache. Parameter types are
+     * automatically checked against assignable types and primitives.
      *
-     * @param paramTypes The types of parameters to look for.
-     * @return The constructor with matching parameter types.
-     * @throws ReflectionException When the class or constructor cannot be located.
+     * @param paramTypes the parameter types to match against
+     * @return a constructor accessor wrapping the matching constructor
+     * @throws ReflectionException if no matching constructor is found in this class
      */
     @SuppressWarnings("unchecked")
     public final @NotNull ConstructorAccessor<R> getConstructor(Class<?>... paramTypes) throws ReflectionException {
@@ -143,19 +193,18 @@ public class Reflection<R> {
                 return new ConstructorAccessor<>(this, (Constructor<R>) constructor);
         }
 
-        throw new ReflectionException("The constructor matching '%s' was not found!", Arrays.asList(types));
+        throw new ReflectionException("The constructor matching '%s' was not found in '%s'!", Arrays.asList(types), this.getType().getName());
     }
 
     /**
-     * Gets a field with matching type.
-     * <p>
-     * The type is automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first field whose type matches the given class. Fields are loaded
+     * from a per-class cache. The type is automatically checked against assignable
+     * types and primitives. Superclasses are walked when
+     * {@link #isProcessingSuperclass()} is {@code true}.
      *
-     * @param type The type to look for.
-     * @return The field with matching type.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param type the field type to match against
+     * @return a field accessor wrapping the matching field
+     * @throws ReflectionException if no matching field is found in this class or its superclasses
      */
     public final <T> @NotNull FieldAccessor<T> getField(@NotNull Class<T> type) throws ReflectionException {
         Class<?> utype = (type.isPrimitive() ? PrimitiveUtil.wrap(type) : PrimitiveUtil.unwrap(type));
@@ -168,33 +217,29 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getField(type);
 
-        throw new ReflectionException("The field with type '%s' was not found!", type);
+        throw new ReflectionException("The field with type '%s' was not found in '%s'!", type, this.getType().getName());
     }
 
     /**
-     * Gets a field with identically matching name.
-     * <p>
-     * This is the same as calling {@link #getField(String, boolean) getField(name, true)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first field with a case-sensitive name match. Delegates to
+     * {@link #getField(String, boolean) getField(name, true)}.
      *
-     * @param name The field name to look for.
-     * @return The field with identically matching name.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param name the field name to match
+     * @return a field accessor wrapping the matching field
+     * @throws ReflectionException if no matching field is found in this class or its superclasses
      */
     public final <T> @NotNull FieldAccessor<T> getField(@NotNull String name) throws ReflectionException {
         return this.getField(name, true);
     }
 
     /**
-     * Gets a field with matching name.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first field with a matching name. Fields are loaded from a per-class
+     * cache. Superclasses are walked when {@link #isProcessingSuperclass()} is {@code true}.
      *
-     * @param name            The field name to look for.
-     * @param isCaseSensitive Whether or not to check case-sensitively.
-     * @return The field with matching name.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param name the field name to match
+     * @param isCaseSensitive whether to match the name case-sensitively
+     * @return a field accessor wrapping the matching field
+     * @throws ReflectionException if no matching field is found in this class or its superclasses
      */
     public final <T> @NotNull FieldAccessor<T> getField(@NotNull String name, boolean isCaseSensitive) throws ReflectionException {
         for (Field field : getDeclaredFieldsCached(this.getType())) {
@@ -205,16 +250,21 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getField(name);
 
-        throw new ReflectionException("The field '%s' was not found!", name);
+        throw new ReflectionException("The field '%s' was not found in '%s'!", name, this.getType().getName());
     }
 
     /**
-     * Gets all fields of the given {@link #getType()}.
-     * <br>
-     * Super classes are automatically checked.
+     * Returns all fields of the reflected class. When {@link #isProcessingSuperclass()}
+     * is {@code true} (the default), the result includes fields from the entire
+     * superclass chain and is cached per class in an unmodifiable set. When
+     * {@code false}, returns only the declared fields of this class without caching.
      *
-     * @return All fields.
-     * @throws ReflectionException When the class or fields cannot be located.
+     * <p>
+     * Individual field arrays per class are loaded from the declared-fields cache,
+     * avoiding repeated JNI calls.
+     *
+     * @return all field accessors for this class (and its superclasses if enabled)
+     * @throws ReflectionException if field introspection fails
      */
     @SuppressWarnings("unchecked")
     public final @NotNull ConcurrentSet<FieldAccessor<?>> getFields() throws ReflectionException {
@@ -246,7 +296,9 @@ public class Reflection<R> {
 
     /**
      * Returns the URLs in the class path specified by the {@code java.class.path}
-     * {@link System#getProperty system property}.
+     * {@linkplain System#getProperty(String) system property}.
+     *
+     * @return an unmodifiable list of class path URLs
      */
     public static @NotNull ConcurrentList<URL> getJavaClassPath() {
         ConcurrentList<URL> urls = Concurrent.newList();
@@ -265,16 +317,15 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets a method with matching return type and parameter types.
-     * <p>
-     * The return type and parameter types are automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first method whose return type and parameter types match. Methods
+     * are loaded from a per-class cache. Types are automatically checked against
+     * assignable types and primitives. Superclasses are walked when
+     * {@link #isProcessingSuperclass()} is {@code true}.
      *
-     * @param type       The return type to look for.
-     * @param paramTypes The types of parameters to look for.
-     * @return The field with matching return type and parameter types.
-     * @throws ReflectionException When the class or method cannot be located.
+     * @param type the return type to match against
+     * @param paramTypes the parameter types to match against
+     * @return a method accessor wrapping the matching method
+     * @throws ReflectionException if no matching method is found in this class or its superclasses
      */
     public final <T> @NotNull MethodAccessor<T> getMethod(@NotNull Class<T> type, @Nullable Class<?>... paramTypes) throws ReflectionException {
         Class<?> utype = (type.isPrimitive() ? PrimitiveUtil.wrap(type) : PrimitiveUtil.unwrap(type));
@@ -291,39 +342,33 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getMethod(type, paramTypes);
 
-        throw new ReflectionException("The method with return type '%s' was not found with parameters ['%s']!", type, Arrays.asList(types));
+        throw new ReflectionException("The method with return type '%s' was not found in '%s' with parameters '%s'!", type, this.getType().getName(), Arrays.asList(types));
     }
 
     /**
-     * Gets a method with identically matching name and parameter types.
-     * <p>
-     * The parameter types are automatically checked against assignable types and primitives.
-     * <p>
-     * This is the same as calling {@link #getMethod(String, boolean, Class...) getMethod(name, true, paramTypes)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first method with a case-sensitive name match and matching parameter
+     * types. Delegates to {@link #getMethod(String, boolean, Class...) getMethod(name, true, paramTypes)}.
      *
-     * @param name       The method name to look for.
-     * @param paramTypes The types of parameters to look for.
-     * @return The method with matching name and parameter types.
-     * @throws ReflectionException When the class or method cannot be located.
+     * @param name the method name to match
+     * @param paramTypes the parameter types to match against
+     * @return a method accessor wrapping the matching method
+     * @throws ReflectionException if no matching method is found in this class or its superclasses
      */
     public final @NotNull MethodAccessor<?> getMethod(@NotNull String name, @Nullable Class<?>... paramTypes) throws ReflectionException {
         return this.getMethod(name, true, paramTypes);
     }
 
     /**
-     * Gets a method with matching name and parameter types.
-     * <p>
-     * The parameter types are automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the first method with a matching name and parameter types. Methods are
+     * loaded from a per-class cache. Parameter types are automatically checked against
+     * assignable types and primitives. Superclasses are walked when
+     * {@link #isProcessingSuperclass()} is {@code true}.
      *
-     * @param name            The method name to look for.
-     * @param isCaseSensitive Whether to check case-sensitively.
-     * @param paramTypes      The types of parameters to look for.
-     * @return The method with matching name and parameter types.
-     * @throws ReflectionException When the class or method cannot be located.
+     * @param name the method name to match
+     * @param isCaseSensitive whether to match the name case-sensitively
+     * @param paramTypes the parameter types to match against
+     * @return a method accessor wrapping the matching method
+     * @throws ReflectionException if no matching method is found in this class or its superclasses
      */
     public final @NotNull MethodAccessor<?> getMethod(@NotNull String name, boolean isCaseSensitive, @Nullable Class<?>... paramTypes) throws ReflectionException {
         Class<?>[] types = toPrimitiveTypeArray(paramTypes);
@@ -338,16 +383,17 @@ public class Reflection<R> {
         if (this.isProcessingSuperclass() && this.getType().getSuperclass() != null)
             return this.getSuperReflection().getMethod(name, paramTypes);
 
-        throw new ReflectionException("The method ''%s'' was not found with parameters ''%s''.", name, Arrays.asList(types));
+        throw new ReflectionException("The method '%s' was not found in '%s' with parameters '%s'.", name, this.getType().getName(), Arrays.asList(types));
     }
 
     /**
-     * Gets all methods of the given {@link #getType()}.
-     * <br>
-     * Super classes are automatically checked.
+     * Returns all methods of the reflected class. When {@link #isProcessingSuperclass()}
+     * is {@code true} (the default), the result includes methods from the entire
+     * superclass chain and is cached per class in an unmodifiable set. When
+     * {@code false}, returns only the declared methods of this class without caching.
      *
-     * @return All methods.
-     * @throws ReflectionException When the class or methods cannot be located.
+     * @return all method accessors for this class (and its superclasses if enabled)
+     * @throws ReflectionException if method introspection fails
      */
     @SuppressWarnings("unchecked")
     public final @NotNull ConcurrentSet<MethodAccessor<?>> getMethods() throws ReflectionException {
@@ -378,9 +424,9 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets the fully-qualified class path (includes package path and class name).
+     * Returns the fully-qualified class name (package path and simple class name).
      *
-     * @return The fully-qualified class path.
+     * @return the fully-qualified class name
      */
     public final @NotNull String getName() {
         return String.format("%s.%s", getPackageName(this.getType()), this.getType().getSimpleName());
@@ -399,20 +445,28 @@ public class Reflection<R> {
     }
 
     /**
-     * Returns the package name of {@code clazz}.
-     * <br><br>
-     * Unlike {@link Class#getPackage}, this method only parses the class name, without
-     * attempting to define the {@link Package} and hence load files.
+     * Returns the package name of the given class by parsing its name string.
+     *
+     * <p>
+     * Unlike {@link Class#getPackage()}, this method only parses the class name
+     * without attempting to define the {@link Package} and hence load files.
+     *
+     * @param type the class to extract the package name from
+     * @return the package name, or an empty string if the class is in the default package
      */
     public static @NotNull String getPackageName(@NotNull Class<?> type) {
         return getPackageName(type.getName());
     }
 
     /**
-     * Returns the package name of {@code classFullName}.
-     * <br><br>
-     * Unlike {@link Class#getPackage}, this method only parses the class name, without
-     * attempting to define the {@link Package} and hence load files.
+     * Returns the package name from a fully-qualified class name string.
+     *
+     * <p>
+     * Unlike {@link Class#getPackage()}, this method only parses the class name
+     * without attempting to define the {@link Package} and hence load files.
+     *
+     * @param classFullName the fully-qualified class name
+     * @return the package name, or an empty string if the class is in the default package
      */
     public static @NotNull String getPackageName(@NotNull String classFullName) {
         int lastDot = classFullName.lastIndexOf('.');
@@ -441,46 +495,56 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets the generic class specified at index 0.
+     * Resolves the first generic type argument of the given object's superclass.
+     * Delegates to {@link #getSuperClass(Object, int) getSuperClass(obj, 0)}.
      *
-     * @param obj the instance to check for generics
-     * @param <U> the type to return as
-     * @return the generic superclass
+     * @param obj the instance whose class to inspect
+     * @param <U> the resolved type argument
+     * @return the resolved generic type argument class
+     * @throws ReflectionException if no generic type argument is found
      */
     public static <U> @NotNull Class<U> getSuperClass(@NotNull Object obj) {
         return getSuperClass(obj, 0);
     }
 
     /**
-     * Gets the generic class specified at the specified index.
+     * Resolves the generic type argument at the given index of the given object's superclass.
+     * Delegates to {@link #getSuperClass(Class, int)}.
      *
-     * @param obj   the instance to check for generics
-     * @param index the index to check for generics
-     * @param <U>   the type to return as
-     * @return the generic superclass
+     * @param obj the instance whose class to inspect
+     * @param index the zero-based index of the type argument
+     * @param <U> the resolved type argument
+     * @return the resolved generic type argument class
+     * @throws ReflectionException if no generic type argument is found at the given index
      */
     public static <U> @NotNull Class<U> getSuperClass(@NotNull Object obj, int index) {
         return getSuperClass(obj.getClass(), index);
     }
 
     /**
-     * Gets the generic class specified at index 0.
+     * Resolves the first generic type argument of the given class's superclass.
+     * Delegates to {@link #getSuperClass(Class, int) getSuperClass(tClass, 0)}.
      *
-     * @param tClass the class to check for generics
-     * @param <U>    the type to return as
-     * @return the generic superclass
+     * @param tClass the class to inspect
+     * @param <U> the resolved type argument
+     * @return the resolved generic type argument class
+     * @throws ReflectionException if no generic type argument is found
      */
     public static <U> @NotNull Class<U> getSuperClass(@NotNull Class<?> tClass) {
         return getSuperClass(tClass, 0);
     }
 
     /**
-     * Gets the generic class specified at the specified index.
+     * Resolves the generic type argument at the given index of the given class's
+     * superclass or generic interfaces. Results are cached per (class, index) pair.
+     * Falls back to inspecting generic interfaces if the generic superclass is not
+     * parameterized.
      *
-     * @param tClass the class to check for generics
-     * @param index  the index to check for generics
-     * @param <U>    the type to return as
-     * @return the generic superclass
+     * @param tClass the class to inspect
+     * @param index the zero-based index of the type argument
+     * @param <U> the resolved type argument
+     * @return the resolved generic type argument class
+     * @throws ReflectionException if no generic type argument is found at the given index
      */
     @SuppressWarnings("unchecked")
     public static <U> @NotNull Class<U> getSuperClass(@NotNull Class<?> tClass, int index) {
@@ -505,23 +569,25 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets a generic class array specified at index 0.
+     * Resolves the first generic type argument of the given class's superclass as an
+     * array type. Delegates to {@link #getSuperClassArray(Class, int) getSuperClassArray(tClass, 0)}.
      *
-     * @param tClass the class to check for generics
-     * @param <U>    the type to return as
-     * @return the generic superclass array
+     * @param tClass the class to inspect
+     * @param <U> the component type of the resolved array
+     * @return the resolved generic type argument as an array class
      */
     public static <U> @NotNull Class<U[]> getSuperClassArray(@NotNull Class<?> tClass) {
         return getSuperClassArray(tClass, 0);
     }
 
     /**
-     * Gets a generic class array specified at the specified index.
+     * Resolves the generic type argument at the given index of the given class's
+     * superclass as an array type.
      *
-     * @param tClass the class to check for generics
-     * @param index  the index to check for generics
-     * @param <U>    the type to return as
-     * @return the generic superclass array
+     * @param tClass the class to inspect
+     * @param index the zero-based index of the type argument
+     * @param <U> the component type of the resolved array
+     * @return the resolved generic type argument as an array class
      */
     @SuppressWarnings("unchecked")
     public static <U> @NotNull Class<U[]> getSuperClassArray(@NotNull Class<?> tClass, int index) {
@@ -530,11 +596,10 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets a new reflection object of the superclass.
-     * <p>
-     * This does not check if the superclass is just a {@link Class}.
+     * Creates a new reflection instance for the immediate superclass. Does not
+     * validate that a superclass exists - the caller must check beforehand.
      *
-     * @return The reflected superclass.
+     * @return a reflection instance for the superclass
      */
     @SuppressWarnings("unchecked")
     private @NotNull Reflection<?> getSuperReflection() {
@@ -542,101 +607,80 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets the value of a field with matching {@link #getType() class type}.
-     * <p>
-     * The field type is automatically checked against assignable types and primitives.
-     * <p>
-     * This is the same as calling {@link #getValue(Class, Object) getValue(reflection.getClazz(), obj)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the value of a field whose type matches the given reflection's type.
+     * Delegates to {@link #getValue(Class, Object) getValue(reflection.getType(), obj)}.
      *
-     * @param reflection The reflection object housing the field's class type to look for.
-     * @param obj        Instance of the current class object, null if static field.
-     * @return The field value with matching type.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param reflection the reflection whose type identifies the field to read
+     * @param obj the instance to read from, or {@code null} for static fields
+     * @return the field value
+     * @throws ReflectionException if no matching field is found
      */
     public final @Nullable Object getValue(@NotNull Reflection<?> reflection, @Nullable Object obj) throws ReflectionException {
         return this.getValue(reflection.getType(), obj);
     }
 
     /**
-     * Gets the value of a field with matching {@link #getType() class type}.
-     * <p>
-     * The field type is automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the value of a field whose type matches the given class.
      *
-     * @param type The field type to look for.
-     * @param obj  Instance of the current class object, null if static field.
-     * @return The field value with matching type.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param type the field type to match
+     * @param obj the instance to read from, or {@code null} for static fields
+     * @param <U> the field value type
+     * @return the field value
+     * @throws ReflectionException if no matching field is found
      */
     public final <U> @Nullable U getValue(@NotNull Class<U> type, @Nullable Object obj) throws ReflectionException {
         return this.getField(type).get(obj);
     }
 
     /**
-     * Gets the value of a field with matching {@link #getType() class type}.
-     * <p>
-     * This is the same as calling {@link #getValue(String, boolean, Object) getValue(name, true, obj)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the value of a field with a case-sensitive name match. Delegates to
+     * {@link #getValue(String, boolean, Object) getValue(name, true, obj)}.
      *
-     * @param name The field name to look for.
-     * @param obj  Instance of the current class object, null if static field.
-     * @return The field value with identically matching name.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param name the field name to match
+     * @param obj the instance to read from, or {@code null} for static fields
+     * @return the field value
+     * @throws ReflectionException if no matching field is found
      */
     public final @Nullable Object getValue(@NotNull String name, @Nullable Object obj) throws ReflectionException {
         return this.getValue(name, true, obj);
     }
 
     /**
-     * Gets the value of a field with matching {@link #getType() class type}.
-     * <p>
-     * Super classes are automatically checked.
+     * Returns the value of a field with a matching name.
      *
-     * @param name            The field name to look for.
-     * @param isCaseSensitive Whether or not to check case-sensitively.
-     * @param obj             Instance of the current class object, null if static field.
-     * @return The field value with matching name.
-     * @throws ReflectionException When the class or field cannot be located.
+     * @param name the field name to match
+     * @param isCaseSensitive whether to match the name case-sensitively
+     * @param obj the instance to read from, or {@code null} for static fields
+     * @return the field value
+     * @throws ReflectionException if no matching field is found
      */
     public final @Nullable Object getValue(@NotNull String name, boolean isCaseSensitive, @Nullable Object obj) throws ReflectionException {
         return this.getField(name, isCaseSensitive).get(obj);
     }
 
     /**
-     * Gets the value of an invoked method with matching {@link #getType() return type}.
-     * <p>
-     * The method's return type is automatically checked against assignable types and primitives.
-     * <p>
-     * This is the same as calling {@link #invokeMethod(Class, Object, Object...) invokeMethod(reflection.getType(), obj, args)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Invokes the method whose return type matches the given reflection's type.
+     * Delegates to {@link #invokeMethod(Class, Object, Object...) invokeMethod(reflection.getType(), obj, args)}.
      *
-     * @param reflection The reflection object whose {@link #getType() type} identifies the return type.
-     * @param obj        Instance of the current class object, null if static method.
-     * @param args       The arguments with matching types to pass to the method.
-     * @return The invoked method value with matching return type.
-     * @throws ReflectionException When the class or method with matching arguments cannot be located.
+     * @param reflection the reflection whose type identifies the method's return type
+     * @param obj the instance to invoke on, or {@code null} for static methods
+     * @param args the arguments to pass to the method
+     * @return the method's return value
+     * @throws ReflectionException if no matching method is found
      */
     public final @Nullable Object invokeMethod(@NotNull Reflection<?> reflection, @Nullable Object obj, @Nullable Object... args) throws ReflectionException {
         return this.invokeMethod(reflection.getType(), obj, args);
     }
 
     /**
-     * Gets the value of an invoked method with matching {@link #getType() return type}.
-     * <p>
-     * The method's return type is automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Invokes the method whose return type matches the given class.
      *
-     * @param type The return type to look for.
-     * @param obj  Instance of the current class object, null if static method.
-     * @param args The arguments with matching types to pass to the method.
-     * @return The invoked method value with matching return type.
-     * @throws ReflectionException When the class or method with matching arguments cannot be located.
+     * @param type the return type to match
+     * @param obj the instance to invoke on, or {@code null} for static methods
+     * @param args the arguments to pass to the method
+     * @param <U> the return type
+     * @return the method's return value
+     * @throws ReflectionException if no matching method is found
      */
     public final <U> @Nullable U invokeMethod(@NotNull Class<U> type, @Nullable Object obj, @Nullable Object... args) throws ReflectionException {
         Class<?>[] types = toPrimitiveTypeArray(args);
@@ -644,33 +688,28 @@ public class Reflection<R> {
     }
 
     /**
-     * Gets the value of an invoked method with identically matching name.
-     * <p>
-     * This is the same as calling {@link #invokeMethod(String, boolean, Object, Object...) invokeMethod(name, true, obj, args)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Invokes the method with a case-sensitive name match. Delegates to
+     * {@link #invokeMethod(String, boolean, Object, Object...) invokeMethod(name, true, obj, args)}.
      *
-     * @param name The method name to look for.
-     * @param obj  Instance of the current class object, null if static method.
-     * @param args The arguments with matching types to pass to the method.
-     * @return The invoked method value with identically matching name.
-     * @throws ReflectionException When the class or method with matching arguments cannot be located.
+     * @param name the method name to match
+     * @param obj the instance to invoke on, or {@code null} for static methods
+     * @param args the arguments to pass to the method
+     * @return the method's return value
+     * @throws ReflectionException if no matching method is found
      */
     public final @Nullable Object invokeMethod(@NotNull String name, @Nullable Object obj, @Nullable Object... args) throws ReflectionException {
         return this.invokeMethod(name, true, obj, args);
     }
 
     /**
-     * Gets the value of an invoked method with matching name.
-     * <p>
-     * Super classes are automatically checked.
+     * Invokes the method with a matching name.
      *
-     * @param name            The method name to look for.
-     * @param isCaseSensitive Whether or not to check case-sensitively.
-     * @param obj             Instance of the current class object, null if static method.
-     * @param args            The arguments with matching types to pass to the method.
-     * @return The invoked method value with matching name.
-     * @throws ReflectionException When the class or method with matching arguments cannot be located.
+     * @param name the method name to match
+     * @param isCaseSensitive whether to match the name case-sensitively
+     * @param obj the instance to invoke on, or {@code null} for static methods
+     * @param args the arguments to pass to the method
+     * @return the method's return value
+     * @throws ReflectionException if no matching method is found
      */
     public final @Nullable Object invokeMethod(@NotNull String name, boolean isCaseSensitive, @Nullable Object obj, @Nullable Object... args) throws ReflectionException {
         Class<?>[] types = toPrimitiveTypeArray(args);
@@ -689,12 +728,13 @@ public class Reflection<R> {
     }
 
     /**
-     * Creates a new instance of the current {@link #getType() class type} with given parameters.
-     * <p>
-     * Super classes are automatically checked.
+     * Creates a new instance of the reflected class by locating a constructor whose
+     * parameter types match the given arguments. Constructor lookup uses the per-class
+     * cache.
      *
-     * @param args The arguments with matching types to pass to the constructor.
-     * @throws ReflectionException When the class or constructor with matching arguments cannot be located.
+     * @param args the arguments to pass to the matching constructor
+     * @return a new instance of the reflected class
+     * @throws ReflectionException if no matching constructor is found or instantiation fails
      */
     public final @NotNull R newInstance(@Nullable Object... args) throws ReflectionException {
         try {
@@ -704,62 +744,55 @@ public class Reflection<R> {
         } catch (ReflectionException reflectionException) {
             throw reflectionException;
         } catch (Exception ex) {
-            throw new ReflectionException(ex);
+            throw new ReflectionException(ex, "Unable to create new instance of '%s' with arguments '%s'.", this.getType().getName(), Arrays.asList(args));
         }
     }
 
     /**
-     * Sets the value of a field with matching {@link #getType() class type}.
-     * <p>
-     * The field type is automatically checked against assignable types and primitives.
-     * <p>
-     * Super classes are automatically checked.
+     * Sets the value of a field whose type matches the given class.
      *
-     * @param type  The field type to look for.
-     * @param obj   Instance of the current class object, null if static field.
-     * @param value The new value of the field.
-     * @throws ReflectionException When the class or field cannot be located or the value does match the field type.
+     * @param type the field type to match
+     * @param obj the instance to write to
+     * @param value the new field value
+     * @param <T> the field type
+     * @throws ReflectionException if no matching field is found or the value is incompatible
      */
     public final <T> void setValue(@NotNull Class<T> type, @NotNull Object obj, @Nullable T value) throws ReflectionException {
         this.getField(type).set(obj, value);
     }
 
     /**
-     * Sets the value of a field with identically matching name.
-     * <p>
-     * This is the same as calling {@link #setValue(String, boolean, Object, Object) setValue(name, true, obj, value)}.
-     * <p>
-     * Super classes are automatically checked.
+     * Sets the value of a field with a case-sensitive name match. Delegates to
+     * {@link #setValue(String, boolean, Object, Object) setValue(name, true, obj, value)}.
      *
-     * @param name  The field name to look for.
-     * @param obj   Instance of the current class object, null if static field.
-     * @param value The new value of the field.
-     * @throws ReflectionException When the class or field cannot be located or the value does match the field type.
+     * @param name the field name to match
+     * @param obj the instance to write to
+     * @param value the new field value
+     * @throws ReflectionException if no matching field is found or the value is incompatible
      */
     public final void setValue(@NotNull String name, @NotNull Object obj, @Nullable Object value) throws ReflectionException {
         this.setValue(name, true, obj, value);
     }
 
     /**
-     * Sets the value of a field with matching name.
-     * <p>
-     * Super classes are automatically checked.
+     * Sets the value of a field with a matching name.
      *
-     * @param name            The field name to look for.
-     * @param isCaseSensitive Whether to check case-sensitively.
-     * @param obj             Instance of the current class object, null if static field.
-     * @param value           The new value of the field.
-     * @throws ReflectionException When the class or field cannot be located or the value does match the field type.
+     * @param name the field name to match
+     * @param isCaseSensitive whether to match the name case-sensitively
+     * @param obj the instance to write to
+     * @param value the new field value
+     * @throws ReflectionException if no matching field is found or the value is incompatible
      */
     public final void setValue(@NotNull String name, boolean isCaseSensitive, @NotNull Object obj, @Nullable Object value) throws ReflectionException {
         this.getField(name, isCaseSensitive).set(obj, value);
     }
 
     /**
-     * Converts any primitive classes in the given classes to their primitive types.
+     * Unwraps each class in the given array to its primitive type equivalent via
+     * {@link PrimitiveUtil#unwrap(Class)}, returning a new array.
      *
-     * @param types The classes to convert.
-     * @return Converted class types.
+     * @param types the class array to convert, may be {@code null}
+     * @return an array of unwrapped primitive types
      */
     @SuppressWarnings("all")
     public static @NotNull Class<?>[] toPrimitiveTypeArray(@Nullable Class<?> @Nullable [] types) {
@@ -772,10 +805,11 @@ public class Reflection<R> {
     }
 
     /**
-     * Converts any primitive classes in the given objects to their primitive types.
+     * Extracts each object's class and unwraps it to its primitive type equivalent via
+     * {@link PrimitiveUtil#unwrap(Class)}, returning a new array.
      *
-     * @param objects The objects to convert.
-     * @return Converted class types.
+     * @param objects the object array to convert, may be {@code null}
+     * @return an array of unwrapped primitive types
      */
     @SuppressWarnings("all")
     public static @NotNull Class<?>[] toPrimitiveTypeArray(@Nullable Object @Nullable [] objects) {
@@ -787,6 +821,19 @@ public class Reflection<R> {
         return newTypes;
     }
 
+    /**
+     * Validates a builder's fields against their {@link BuildFlag @BuildFlag} annotations.
+     * Checks null/empty constraints, regex patterns, and length limits.
+     *
+     * <p>
+     * The list of annotated fields per builder class is cached on first invocation,
+     * so subsequent calls for the same builder type skip all reflective discovery and
+     * only read runtime field values.
+     *
+     * @param builder the builder instance to validate
+     * @param <T> the builder type
+     * @throws ReflectionException if any field violates its {@link BuildFlag} constraints
+     */
     @SuppressWarnings("all")
     public static <T extends ClassBuilder<?>> void validateFlags(@NotNull T builder) {
         ConcurrentMap<String, ConcurrentMap<FieldAccessor<?>, Boolean>> invalidRequired = Concurrent.newMap();
@@ -864,7 +911,7 @@ public class Reflection<R> {
                         invalid = ((Collection<?>) value).size() > flag.limit();
 
                     if (invalid)
-                        throw new ReflectionException("Field '%s' does not match pattern '%s'!", field.getField().getName(), flag.pattern());
+                        throw new ReflectionException("Field '%s' in '%s' does not match pattern '%s' (value: '%s')!", field.getField().getName(), builder.getClass().getSimpleName(), flag.pattern(), value);
                 }
             }
 
@@ -872,33 +919,31 @@ public class Reflection<R> {
             if (flag.limit() >= 0) {
                 if (value != null) {
                     Class<?> fieldType = field.getField().getType();
+                    int actualLength = -1;
 
                     if (CharSequence.class.isAssignableFrom(fieldType)) {
                         CharSequence sequence = (CharSequence) value;
-                        invalid = StringUtil.length(sequence) > flag.limit();
+                        actualLength = StringUtil.length(sequence);
+                        invalid = actualLength > flag.limit();
                     } else if (Collection.class.isAssignableFrom(fieldType)) {
                         Collection<?> collection = (Collection<?>) value;
-                        invalid = collection.size() > flag.limit();
+                        actualLength = collection.size();
+                        invalid = actualLength > flag.limit();
                     } else if (value instanceof Optional<?> optional) {
                         final ParameterizedType parameterizedType = (ParameterizedType) field.getField().getGenericType();
                         final Type actualType = parameterizedType.getActualTypeArguments()[0];
 
                         if (String.class.isAssignableFrom((Class<?>) actualType)) {
-                            invalid = optional.map(String::valueOf)
-                                .map(StringUtil::length)
-                                .map(length -> length > flag.limit())
-                                .orElse(false);
+                            actualLength = optional.map(String::valueOf).map(StringUtil::length).orElse(0);
+                            invalid = actualLength > flag.limit();
                         } else if (Number.class.isAssignableFrom((Class<?>) actualType)) {
-                            invalid = optional.map(String::valueOf)
-                                .map(NumberUtil::createNumber)
-                                .map(Number::intValue)
-                                .map(number -> number > flag.limit())
-                                .orElse(false);
+                            actualLength = optional.map(String::valueOf).map(NumberUtil::createNumber).map(Number::intValue).orElse(0);
+                            invalid = actualLength > flag.limit();
                         }
                     }
 
                     if (invalid)
-                        throw new ReflectionException("Field '%s' does not have length of '%s' or lower!", field.getField().getName(), flag.limit());
+                        throw new ReflectionException("Field '%s' in '%s' has length %s, exceeds limit of %s!", field.getField().getName(), builder.getClass().getSimpleName(), actualLength, flag.limit());
                 }
             }
         });
@@ -909,15 +954,16 @@ public class Reflection<R> {
             .filterValue(Boolean::booleanValue)
             .findFirst()
             .ifPresentOrElse(pair -> {
-                throw new ReflectionException("Field '%s' is required and is null/empty!", pair.getKey().getField().getName());
+                throw new ReflectionException("Field '%s' in '%s' is required and is null/empty!", pair.getKey().getField().getName(), builder.getClass().getSimpleName());
             }, () -> invalidRequired.stream()
                 .filterKey(key -> !key.equals("_DEFAULT_"))
                 .filter((key, fields) -> fields.stream().allMatch((field, invalid) -> invalid))
                 .findFirst()
                 .ifPresent(invalidGroup -> {
                     throw new ReflectionException(
-                        "Field group '%s' is required and [%s] is null/empty!",
+                        "Field group '%s' in '%s' is required and [%s] is null/empty!",
                         invalidGroup.getKey(),
+                        builder.getClass().getSimpleName(),
                         invalidGroup.getValue()
                             .stream()
                             .filterValue(Boolean::booleanValue)
