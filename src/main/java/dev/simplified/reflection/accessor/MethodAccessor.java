@@ -65,6 +65,24 @@ public final class MethodAccessor<T> implements Accessor<Method> {
     }
 
     /**
+     * Returns the parameter types declared by this method.
+     *
+     * @return an array of parameter types
+     */
+    public @NotNull Class<?>[] getParameterTypes() {
+        return this.getHandle().getParameterTypes();
+    }
+
+    /**
+     * Returns the return type of this method.
+     *
+     * @return the return type
+     */
+    public @NotNull Class<?> getReturnType() {
+        return this.getHandle().getReturnType();
+    }
+
+    /**
      * {@inheritDoc}
      */
     @Override
@@ -103,7 +121,7 @@ public final class MethodAccessor<T> implements Accessor<Method> {
         try {
             return (T) this.getMethod().invoke(obj);
         } catch (Exception exception) {
-            throw new ReflectionException(exception, "Unable to invoke method '%s' in '%s' with no arguments.", this.getMethod(), this.getType());
+            throw new ReflectionException(exception, "Unable to invoke method '%s' in '%s' with no arguments", this.getMethod(), this.getType());
         }
     }
 
@@ -141,7 +159,7 @@ public final class MethodAccessor<T> implements Accessor<Method> {
                 .map(Objects::toString)
                 .forEach(arguments::add);
 
-            throw new ReflectionException(exception, "Unable to invoke method '%s' in '%s' with arguments [%s].", this.getMethod(), this.getType(), arguments.toString());
+            throw new ReflectionException(exception, "Unable to invoke method '%s' in '%s' with arguments [%s]", this.getMethod(), this.getType(), arguments.toString());
         }
     }
 

@@ -73,7 +73,7 @@ public final class FieldAccessor<T> implements Accessor<Field> {
         try {
             return (T) this.getField().get(obj);
         } catch (Exception exception) {
-            throw new ReflectionException(exception, "Unable to get field '%s' from '%s'.", this.getField(), obj);
+            throw new ReflectionException(exception, "Unable to get field '%s' from '%s'", this.getField(), obj);
         }
     }
 
@@ -87,9 +87,18 @@ public final class FieldAccessor<T> implements Accessor<Field> {
     }
 
     /**
+     * Returns the declared type of the field represented by this accessor.
+     *
+     * @return the field's declared type
+     */
+    public @NotNull Class<?> getFieldType() {
+        return this.getHandle().getType();
+    }
+
+    /**
      * Returns a {@code Type} object that represents the declared type for the field represented by this {@code Field} object.
      *
-     * @return The generic field type.
+     * @return the generic field type
      */
     public @NotNull Type getGenericType() {
         return this.getHandle().getGenericType();
@@ -143,7 +152,7 @@ public final class FieldAccessor<T> implements Accessor<Field> {
         try {
             this.getField().set(obj, value);
         } catch (Exception exception) {
-            throw new ReflectionException(exception, "Unable to set field '%s' to '%s' in '%s'.", this.getField(), value, obj);
+            throw new ReflectionException(exception, "Unable to set field '%s' to '%s' in '%s'", this.getField(), value, obj);
         }
     }
 
