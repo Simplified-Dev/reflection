@@ -124,19 +124,6 @@ public final class MethodAccessor<T> implements Accessor<Method> {
     }
 
     /**
-     * Invokes a static method with matching {@link #getType() class type}.
-     * <p>
-     * Super classes are automatically checked.
-     *
-     * @param args The arguments with matching types to pass to the method.
-     * @return The invoked method value with matching return type.
-     * @throws ReflectionException When the method is not static or is passed invalid arguments.
-     */
-    public @Nullable T invoke(@Nullable Object... args) throws ReflectionException {
-        return this.invoke(null, args);
-    }
-
-    /**
      * Gets the value of an invoked method with matching {@link #getType() class type}.
      * <p>
      * Super classes are automatically checked.
