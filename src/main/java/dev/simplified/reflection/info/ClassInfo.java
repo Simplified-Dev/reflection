@@ -10,11 +10,11 @@ import java.io.File;
 @Getter
 public class ClassInfo extends ResourceInfo {
 
-    private final @NotNull String name;
+    private final @NotNull String className;
 
     public ClassInfo(@NotNull File file, @NotNull String resourceName, @NotNull ClassLoader loader) {
         super(file, resourceName, loader);
-        this.name = Reflection.getName(resourceName);
+        this.className = Reflection.getName(resourceName);
     }
 
     /**
@@ -29,7 +29,7 @@ public class ClassInfo extends ResourceInfo {
      * class.getPackage()} returns {@code null}.
      */
     public String getPackageName() {
-        return Reflection.getPackageName(this.getName());
+        return Reflection.getPackageName(this.getClassName());
     }
 
     /**
@@ -41,10 +41,10 @@ public class ClassInfo extends ResourceInfo {
      * @apiNote This class uses heuristics to identify the simple name.
      */
     public String getSimpleName() {
-        int lastDollarSign = this.getName().lastIndexOf('$');
+        int lastDollarSign = this.getClassName().lastIndexOf('$');
 
         if (lastDollarSign != -1) {
-            String innerClassName = this.getName().substring(lastDollarSign + 1);
+            String innerClassName = this.getClassName().substring(lastDollarSign + 1);
             // local and anonymous classes are prefixed with number (1,2,3...), anonymous classes are
             // entirely numeric whereas local classes have the user supplied name as a suffix
 
@@ -53,10 +53,10 @@ public class ClassInfo extends ResourceInfo {
 
         String packageName = this.getPackageName();
         if (packageName.isEmpty())
-            return this.getName();
+            return this.getClassName();
 
         // Since this is a top level class, its simple name is always the part after package name.
-        return this.getName().substring(packageName.length() + 1);
+        return this.getClassName().substring(packageName.length() + 1);
     }
 
     /**
@@ -66,7 +66,7 @@ public class ClassInfo extends ResourceInfo {
      * check on the loaded {@link Class} object instead.
      */
     public boolean isTopLevel() {
-        return this.getName().indexOf('$') == -1;
+        return this.getClassName().indexOf('$') == -1;
     }
 
     /**
@@ -77,7 +77,7 @@ public class ClassInfo extends ResourceInfo {
      */
     public @NotNull Class<?> load() {
         try {
-            return this.getClassLoader().loadClass(this.getName());
+            return this.getClassLoader().loadClass(this.getClassName());
         } catch (ClassNotFoundException e) {
             // Shouldn't happen, since the class name is read from the class path.
             throw new IllegalStateException(e);
@@ -86,7 +86,7 @@ public class ClassInfo extends ResourceInfo {
 
     @Override
     public @NotNull String toString() {
-        return this.getName();
+        return this.getClassName();
     }
 
 }
