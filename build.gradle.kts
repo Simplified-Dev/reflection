@@ -18,8 +18,8 @@ repositories {
 
 dependencies {
     // Simplified Libraries
-    api("com.github.simplified-dev:collections") { version { strictly("652c22d") } }
-    api("com.github.simplified-dev:utils") { version { strictly("7c2feb7") } }
+    api("com.github.simplified-dev:collections") { version { strictly("7699a31") } }
+    api("com.github.simplified-dev:utils") { version { strictly("036cc09") } }
 
     // JetBrains Annotations
     api(libs.annotations)
