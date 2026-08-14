@@ -1,8 +1,8 @@
 package dev.simplified.reflection.accessor;
 
+import dev.simplified.annotations.Getter;
 import dev.simplified.reflection.Reflection;
 import dev.simplified.reflection.exception.ReflectionException;
-import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 

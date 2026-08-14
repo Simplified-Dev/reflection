@@ -18,8 +18,8 @@ repositories {
 
 dependencies {
     // Simplified Libraries
-    api("com.github.simplified-dev:collections") { version { strictly("7699a31") } }
-    api("com.github.simplified-dev:utils") { version { strictly("036cc09") } }
+    api("com.github.simplified-dev:collections") { version { strictly("23f01b6") } }
+    api("com.github.simplified-dev:utils") { version { strictly("381e317") } }
 
     // JetBrains Annotations
     api(libs.annotations)
@@ -33,7 +33,7 @@ dependencies {
     implementation(libs.elk.layered)
     runtimeOnly(libs.xtext.xbase.lib)
 
-    // Lombok Annotations
-    compileOnly(libs.lombok)
-    annotationProcessor(libs.lombok)
+    // Simplified Annotations
+    compileOnly(libs.simplified.annotations)
+    annotationProcessor(libs.simplified.annotations)
 }

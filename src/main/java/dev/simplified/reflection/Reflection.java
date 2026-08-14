@@ -1,5 +1,7 @@
 package dev.simplified.reflection;
 
+import dev.simplified.annotations.Getter;
+import dev.simplified.annotations.Setter;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
 import dev.simplified.collection.ConcurrentMap;
@@ -17,8 +19,6 @@ import dev.simplified.util.NumberUtil;
 import dev.simplified.util.PrimitiveUtil;
 import dev.simplified.util.StringUtil;
 import dev.simplified.util.SystemUtil;
-import lombok.Getter;
-import lombok.Setter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 

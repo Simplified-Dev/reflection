@@ -1,8 +1,8 @@
 package dev.simplified.reflection.info;
 
+import dev.simplified.annotations.Getter;
 import dev.simplified.reflection.Reflection;
 import dev.simplified.util.RegexUtil;
-import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;

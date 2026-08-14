@@ -1,13 +1,13 @@
 package dev.simplified.reflection.diagram;
 
+import dev.simplified.annotations.AccessLevel;
+import dev.simplified.annotations.Getter;
+import dev.simplified.annotations.NoArgsConstructor;
+import dev.simplified.annotations.RequiredArgsConstructor;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentMap;
 import dev.simplified.reflection.Reflection;
 import dev.simplified.reflection.builder.BuildFlag;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.file.Path;
@@ -251,8 +251,6 @@ public final class DiagramConfig {
      *
      * @see LayeringOption#STRATEGY
      */
-    @Getter
-    @RequiredArgsConstructor
     public enum LayeringStrategy {
 
         NETWORK_SIMPLEX,

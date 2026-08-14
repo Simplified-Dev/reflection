@@ -1,8 +1,10 @@
 package dev.simplified.reflection.info;
 
+import dev.simplified.annotations.CallSuper;
+import dev.simplified.annotations.EqualsAndHashCode;
+import dev.simplified.annotations.Getter;
 import dev.simplified.util.StringUtil;
 import dev.simplified.util.SystemUtil;
-import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -10,12 +12,12 @@ import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.NoSuchElementException;
-import java.util.Objects;
 
 /**
  * Represents a class path resource that can be either a class file or any other resource file
  * loadable from the class path.
  */
+@EqualsAndHashCode(callSuper = CallSuper.YES)
 @Getter
 public class ResourceInfo extends FileInfo {
 
@@ -85,22 +87,6 @@ public class ResourceInfo extends FileInfo {
             throw new NoSuchElementException(this.getResourceName());
 
         return url;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
-
-        ResourceInfo that = (ResourceInfo) o;
-
-        return Objects.equals(this.getResourceName(), that.getResourceName());
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(super.hashCode(), this.getResourceName());
     }
 
     public byte[] toBytes() {
