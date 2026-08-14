@@ -3,7 +3,6 @@ package dev.simplified.reflection.info;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentSet;
 import dev.simplified.reflection.accessor.ResourceAccessor;
-import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -16,7 +15,6 @@ import java.util.jar.JarFile;
  * Represents a single location (a directory or a jar file) in the class path and is responsible
  * for scanning resources from this location.
  */
-@Getter
 public class LocationInfo extends FileInfo {
 
     public LocationInfo(@NotNull File file, @NotNull ClassLoader classloader) {

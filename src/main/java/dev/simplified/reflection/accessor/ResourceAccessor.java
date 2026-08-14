@@ -1,5 +1,6 @@
 package dev.simplified.reflection.accessor;
 
+import dev.simplified.annotations.Getter;
 import dev.simplified.collection.Concurrent;
 import dev.simplified.collection.ConcurrentList;
 import dev.simplified.collection.ConcurrentMap;
@@ -9,7 +10,6 @@ import dev.simplified.reflection.info.ClassInfo;
 import dev.simplified.reflection.info.LocationInfo;
 import dev.simplified.reflection.info.ResourceInfo;
 import dev.simplified.util.StringUtil;
-import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
