@@ -272,7 +272,7 @@ src/main/java/dev/simplified/reflection/
 | [Xtext Xbase Lib](https://www.eclipse.org/xtext/) | 2.37.0 | Runtime |
 | [Log4j2](https://logging.apache.org/log4j/) | 2.25.3 | API |
 | [JetBrains Annotations](https://github.com/JetBrains/java-annotations) | 26.0.2 | API |
-| [Lombok](https://projectlombok.org/) | 1.18.36 | Compile-only |
+| [Simplified Annotations](https://github.com/simplified-dev/annotations) | 2.5.1 | Compile-only |
 | [collections](https://github.com/Simplified-Dev/collections) | master-SNAPSHOT | API (Simplified-Dev) |
 | [utils](https://github.com/Simplified-Dev/utils) | master-SNAPSHOT | API (Simplified-Dev) |
 
